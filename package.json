@@ -1,0 +1,15 @@
+{
+  "name": "puppeteer-plaza-vea",
+  "version": "1",
+  "description": "Reto de scrapping, plazavea con puppeter",
+  "main": "src/index.js",
+  "repository": "git@github.com:krowdy-careers/reto-bootcamp-noviembre.git",
+  "license": "MIT",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "puppeteer": "^23.7.1",
+    "puppeteer-core": "^23.7.1"
+  }
+}
