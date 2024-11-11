@@ -7,17 +7,44 @@ const openMenu = async (page, selector) => {
   console.log("MY_LOG: EFECTUANDO SCRAP");
 };
 
+const getProductsData = async (page) => {
+  return await page.evaluate(() => {
+    const productElements = document.querySelectorAll(
+      ".showcase-grid > div > .Showcase__content"
+    );
+
+    //Se desestructura para converitr de NodeList a un array de Node Elements
+    return [...productElements].map((product) => ({ 
+      name: product.querySelector(".Showcase__name")?.innerText || "Sin nombre",
+      seller:
+        product.querySelector(".Showcase__SellerName")?.innerText ||
+        "Sin vendedor",
+      price:
+        product.querySelector(".Showcase__salePrice")?.innerText ||
+        "Sin precio",
+    }));
+  });
+};
+
 const getTextContentFromSelector = async (page, selector) => {
   await waitForSelector(page, selector);
-  return page.evaluate((selector) => 
-    [...document.querySelectorAll(selector)].map((el) => el.innerText.trim())
-  , selector);
+  return await page.evaluate(
+    (selector) =>
+      [...document.querySelectorAll(selector)].map((el) => el.innerText.trim()),
+    selector
+  );
 };
 
 const formatCategories = async (categories) => {
-  return Promise.all(categories.map(async (category) => 
-    category.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/ /g, "-")
-  ));
+  return await Promise.all(
+    categories.map(async (category) =>
+      category
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/ /g, "-")
+    )
+  );
 };
 
 const navigateToUrl = async (page, url) => {
@@ -30,58 +57,101 @@ const navigateToUrl = async (page, url) => {
   }
 };
 
-const getProductsData = async (page) => {
-  return page.evaluate(() => {
-    const productElements = document.querySelectorAll(".showcase-grid > div > .Showcase__content");
-    return [...productElements].map((product) => ({
-      name: product.querySelector(".Showcase__name")?.innerText || "Sin nombre",
-      seller: product.querySelector(".Showcase__SellerName")?.innerText || "Sin vendedor",
-      price: product.querySelector(".Showcase__salePrice")?.innerText || "Sin precio",
-    }));
-  });
+const elementExist = async (page, selector) => {
+  try {
+    return await page.evaluate((selector) => {
+      const element = document.querySelector(selector);
+
+      return element && !element.classList.contains("disabled");
+    }, selector);
+  } catch (error) {
+    console.error(`No se pudo verificar si existe "${selector}":`, error);
+    return false;
+  }
+};
+
+const pressNextButton = async (page, selector) => {
+  await waitForSelector(page, selector);
+  await page.evaluate((selector) => {
+    const element = document.querySelector(selector);
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, selector);
+
+  await page.waitForFunction(
+    (selector) => {
+      const element = document.querySelector(selector);
+      if (element) {
+        const rect = element.getBoundingClientRect();
+        return rect.top >= 0 && rect.bottom <= window.innerHeight;
+      }
+      return false;
+    },
+    {},
+    selector
+  );
+
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: "networkidle2", timeout: 60000 }), 
+    page.locator(selector).click(),
+  ]);
 };
 
 const collectProductsFromPage = async (page) => {
-  const products = [];
-  const newProducts = await getProductsData(page);
-  if (newProducts.length) products.push(...newProducts);
-  return products;
+  let products = [];
+  let exist = true;
+  try {
+    do {
+      products = products.concat(await getProductsData(page));
+      exist = await elementExist(page, ".page-control.next");
+      if (exist) await pressNextButton(page, ".page-control.next");
+    } while (exist);
+
+    return products;
+  } catch (error) {
+    return products;
+  }
 };
 
-const scrapeCategoryPage = async (page, categoriesUrl) => {
+const scrapCategoryPage = async (page, categoriesUrl) => {
+  let allProducts = []
   for (const url of categoriesUrl) {
     if (url === "supermercado" || url === "marcas-aliadas") continue;
     try {
       const fullUrl = `${URL_FOR_SCRAP}${url}`;
       const currentUrl = await navigateToUrl(page, fullUrl);
-      console.log("MY_LOG: Estamos en: ", currentUrl);
+
       const products = await collectProductsFromPage(page);
-      console.log("MY_LOG: Productos encontrados:", products);
+
+      allProducts = allProducts.concat(products)
     } catch (error) {
       console.error(`Error al navegar a ${url}:`, error);
     }
   }
+  console.log("MY_LOG: All Products: ", allProducts);
+  
 };
 
-const scrapeCategories = async (page) => {
+const scrapCategories = async (page) => {
   const categorySelector = 'span[data-section="categories"]';
   const menuSelectorForWait = "#menu-button-desktop";
   try {
     await openMenu(page, menuSelectorForWait);
     const categories = await getTextContentFromSelector(page, categorySelector);
     const categoriesUrl = await formatCategories(categories);
-    await scrapeCategoryPage(page, categoriesUrl);
+    await scrapCategoryPage(page, categoriesUrl);
   } catch (error) {
     console.error("Error durante el scraping:", error);
     throw error;
   }
 };
 
-const scrapeData = async () => {
+const scrapData = async () => {
   const { browser, page } = await launchBrowser();
   try {
     await page.goto(URL_FOR_SCRAP);
-    await scrapeCategories(page);
+    await scrapCategories(page);
   } catch (error) {
     console.error("Error durante el scraping:", error);
     throw error;
@@ -90,4 +160,4 @@ const scrapeData = async () => {
   }
 };
 
-module.exports = { scrapeData };
+module.exports = { scrapData };
